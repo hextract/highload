@@ -1,0 +1,45 @@
+<mxGraphModel dx="1222" dy="746" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-51" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;Customer&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#cccccc&quot;&gt;[Person]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Orders food via&lt;br&gt;mobile app&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="220" x="40" y="20" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-52" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;Courier&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#cccccc&quot;&gt;[Person]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Delivers orders,&lt;br&gt;sends GPS location&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="220" x="400" y="20" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-53" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#08427B;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;Restaurant&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#cccccc&quot;&gt;[Person]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Manages menu,&lt;br&gt;prepares orders&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="220" x="760" y="20" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-54" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1168BD;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b style=&quot;font-size:16px&quot;&gt;FoodDelivery Platform&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#cccccc&quot;&gt;[Software System]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:12px&quot;&gt;Restaurant catalog, ordering, payments,&lt;br&gt;real-time delivery tracking, notifications&lt;/font&gt;" vertex="1">
+      <mxGeometry height="130" width="580" x="210" y="240" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-55" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;Payment Provider&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#eeeeee&quot;&gt;[External System]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Card &amp;amp; SBP processing&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="250" x="20" y="510" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-56" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;Push Service&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#eeeeee&quot;&gt;[External System]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;FCM / APNs&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="250" x="380" y="510" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-57" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#999999;fontColor=#ffffff;strokeColor=none;fontSize=13;" value="&lt;b&gt;SMS Gateway&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#eeeeee&quot;&gt;[External System]&lt;/font&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;SMS for critical alerts&lt;/font&gt;" vertex="1">
+      <mxGeometry height="100" width="250" x="740" y="510" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-58" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-51" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-54" value="HTTPS / WS">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-59" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-52" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-54" value="HTTPS / WS">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-60" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-53" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-54" value="HTTPS">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-61" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-54" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-55" value="Payments">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-62" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-54" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-56" value="Push">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="yXY9bk7_Fscr1LMb_1GZ-63" edge="1" parent="1" source="yXY9bk7_Fscr1LMb_1GZ-54" style="endArrow=block;endFill=1;html=1;rounded=0;fontSize=11;fontColor=#555555;strokeColor=#707070;strokeWidth=1.5;" target="yXY9bk7_Fscr1LMb_1GZ-57" value="SMS">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+  </root>
+</mxGraphModel>
