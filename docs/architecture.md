@@ -10,7 +10,7 @@
 
 **Почему не микросервисы.** Команда небольшая, бюджет ограничен, time-to-market жёсткий. Полноценный MSA с десятками сервисов, service mesh, contract testing и независимыми CI/CD-пайплайнами - это операционная нагрузка, которая не окупается при 5 разработчиках. SBA даёт нам 6 сервисов вместо 20+, и каждый разработчик может владеть одним-двумя целиком.
 
-**Почему EDA в дополнение.** Жизненный цикл заказа - это цепочка шагов с участием нескольких сервисов. Прямые синхронные вызовы между всеми создали бы каскадные отказы. Kafka развязывает сервисы: Order Service публикует `OrderPaid`, а Notification Service, Tracking Service и Catalog Service потребляют это событие независимо. Если Notification упал - события копятся в Kafka и обработаются после восстановления, а оплата и трекинг продолжают работать.
+**Почему EDA в дополнение.** Жизненный цикл заказа - это цепочка шагов с участием нескольких сервисов. Прямые синхронные вызовы между всеми создали бы каскадные отказы. Kafka развязывает сервисы: Order Service публикует `PaymentRequest`, Payment Service потребляет и публикует результат обратно - нет синхронной зависимости. Notification Service, Tracking Service потребляют события независимо. Рестораны уведомляются через Notification Service (push в панель). Если Notification упал - события копятся в Kafka и обработаются после восстановления, оплата и трекинг продолжают работать.
 
 > Подробное обоснование: [ADR-001: Service-Based Architecture](adr/001-service-based-architecture.md)
 
@@ -56,10 +56,10 @@
 |---|-----------|-----------|------------|-------------|
 | 1 | **API Gateway** | Kong | Единая точка входа. Маршрутизация запросов к внутренним сервисам, JWT-аутентификация, rate limiting (token bucket, 100 req/s на пользователя), TLS termination. Проксирует WebSocket-соединения для трекинга | sync - HTTPS/WSS от клиентов, gRPC к сервисам |
 | 2 | **Catalog Service** | Go | Управление каталогом ресторанов и меню. CRUD для ресторанов (от ресторанной панели). Поиск: полнотекстовый + по кухне/рейтингу/расстоянию делегируется в Elasticsearch. Меню кэшируется в Redis (TTL 5 мин). | sync - gRPC от Gateway, SQL к PG, REST к ES, GET/SET к Redis |
-| 3 | **Order Service** | Go | Ядро бизнес-логики. Создание заказа, управление корзиной, state machine статусов (created → paid → cooking → courier_assigned → picked_up → delivered / cancelled). Saga-оркестратор: координирует оплату, подтверждение ресторана, назначение курьера | sync - gRPC от Gateway и к Payment Service; async - produce/consume через Kafka |
-| 4 | **Payment Service** | Go | Инициация платежей через внешний провайдер, обработка webhook-callback-ов, сверка (reconciliation). Идемпотентность через `idempotency_key`. Выделен в отдельный сервис для изоляции PCI DSS scope | sync - gRPC от Order Service, HTTPS к провайдеру; async - produce в Kafka |
+| 3 | **Order Service** | Go | Ядро бизнес-логики. Создание заказа, управление корзиной, state machine статусов (created → payment_pending → paid → cooking → courier_assigned → picked_up → delivered / cancelled). Saga-оркестратор: координирует оплату, уведомление ресторана, назначение курьера. С Payment Service общается только через Kafka - нет синхронной зависимости | sync - gRPC от Gateway; async - produce/consume через Kafka |
+| 4 | **Payment Service** | Go | Потребляет PaymentRequest из Kafka, инициирует платёж через внешний провайдер, публикует результат (PaymentSucceeded/PaymentFailed) обратно в Kafka. Обработка webhook-callback-ов, сверка (reconciliation). Идемпотентность через `idempotency_key`. Выделен в отдельный сервис для изоляции PCI DSS scope | sync - HTTPS к платёжному провайдеру; async - consume/produce через Kafka |
 | 5 | **Tracking Service** | Go | Приём координат от курьеров (через API), хранение в Redis (GEOADD), вычисление ETA. WebSocket-сервер для push обновлений статуса клиенту. Потребляет события из Kafka (OrderPaid, CourierAssigned) для обновления состояния | sync - WebSocket к клиентам, GEO к Redis; async - consume/produce через Kafka |
-| 6 | **Notification Service** | Go | Потребляет события из Kafka и рассылает уведомления: push через FCM/APNs (основной канал), SMS через шлюз (для критичных: оплата, отмена). Retry с экспоненциальным backoff, dead letter queue для неудавшихся | async - consume из Kafka, HTTPS к внешним push/SMS |
+| 6 | **Notification Service** | Go | Единый канал исходящих уведомлений для всех акторов. Потребляет события из Kafka и рассылает: клиентам и курьерам - push (FCM/APNs) и SMS (критичные), ресторанам - push в панель ресторана (новый заказ, отмена). Retry с экспоненциальным backoff, dead letter queue для неудавшихся | async - consume из Kafka, HTTPS к внешним push/SMS |
 
 #### Хранилища (stateful)
 
@@ -82,7 +82,7 @@
 
 ![Sequence Diagram - Happy path](diagrams/seq-happy-path.png)
 
-**Описание.** Клиент создаёт заказ (шаги 1–6), затем оплачивает его (шаги 7–20). Order Service синхронно вызывает Payment Service, который обращается к внешнему провайдеру. После успешной оплаты заказ переводится в статус `paid`, событие публикуется в Kafka, и Notification Service асинхронно отправляет push. Весь синхронный путь укладывается в latency budget ~980 ms (p99), что ниже SLO в 2 000 ms
+**Описание.** Клиент создаёт заказ (шаги 1–4), затем инициирует оплату (шаги 5–9). Order Service публикует `PaymentRequest` в Kafka и сразу возвращает клиенту 202 Accepted - клиент не ждёт ответа от платёжного провайдера. Payment Service асинхронно потребляет событие, обращается к провайдеру, и при успехе публикует `PaymentSucceeded` обратно в Kafka. Order Service потребляет его, переводит заказ в `paid` и публикует `OrderPaid`. Notification Service отправляет push. Синхронный путь клиента - только до записи в Kafka (~100 ms), что ниже SLO в 2 000 ms
 
 ### 3.2. Ошибка - таймаут платёжного провайдера
 
@@ -90,7 +90,7 @@
 
 ![Sequence Diagram - Failure](diagrams/seq-payment-failure.png)
 
-**Описание.** Платёжный провайдер - bottleneck (p99 ~700 ms). При таймауте Payment Service делает одну повторную попытку с тем же `idempotency_key` (идемпотентность гарантирует, что повторный вызов не спишет деньги дважды). Если retry тоже провалился - платёж переводится в `requires_confirmation`, клиенту возвращается «оплата обрабатывается» (не ошибка). Фоновый reconciliation job каждые 30 секунд опрашивает провайдера о статусе незавершённых платежей. Когда статус подтверждён - событие `PaymentConfirmed` идёт через Kafka, заказ переводится в `paid`, клиент получает push. Такой подход гарантирует, что деньги не теряются и клиент не остаётся в неведении
+**Описание.** Клиент получает 202 сразу - не ждёт провайдера. Payment Service потребляет `PaymentRequest` из Kafka и обращается к провайдеру. При таймауте делает retry с тем же `idempotency_key`. Если retry тоже провалился - платёж остаётся в `requires_confirmation`. Фоновый reconciliation job каждые 30 секунд опрашивает провайдера о статусе незавершённых платежей. Когда статус подтверждён - событие `PaymentConfirmed` идёт через Kafka, Order Service переводит заказ в `paid`, клиент получает push. Такой подход гарантирует, что деньги не теряются и клиент не заблокирован на экране оплаты
 
 ### 3.3. Асинхронный сценарий - saga жизненного цикла заказа
 
@@ -98,7 +98,7 @@
 
 ![Sequence Diagram - Saga](diagrams/seq-async-saga.png)
 
-**Описание.** После оплаты Order Service (saga-оркестратор) запускает цепочку асинхронных шагов через Kafka. Каждый шаг саги фиксируется в таблице `saga_state` - при рестарте сервиса незавершённые саги продолжатся с последнего шага. Если ресторан отклоняет заказ - запускается компенсация: refund через Payment Service и отмена заказа. Клиент получает push на каждом этапе. Весь процесс асинхронный - клиент не ждёт в UI, а видит обновления через WebSocket/push
+**Описание.** После оплаты Order Service (saga-оркестратор) запускает цепочку асинхронных шагов через Kafka. Ресторан уведомляется через Notification Service (push в панель ресторана), подтверждает или отклоняет заказ через REST API. Каждый шаг саги фиксируется в таблице `saga_state`. Если ресторан отклоняет заказ - Order Service публикует `RefundRequest` в Kafka, Payment Service выполняет возврат и публикует `RefundCompleted`. Клиент получает push на каждом этапе. Весь процесс полностью асинхронный - все межсервисные вызовы идут через Kafka
 
 > Подробнее: [ADR-003: Saga-оркестрация](adr/003-saga-orchestration-for-orders.md)
 
@@ -272,28 +272,17 @@ Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
 }
 ```
 
-**Response 200 (оплата прошла):**
+**Response 202 (оплата принята в обработку - всегда async):**
 
 ```json
 {
   "order_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-  "payment_id": "d4e5f6a7-b8c9-0123-def0-234567890123",
-  "status": "paid",
-  "amount": 1430,
-  "estimated_delivery": "2026-04-18T13:15:00Z"
-}
-```
-
-**Response 202 (оплата обрабатывается - провайдер не ответил вовремя):**
-
-```json
-{
-  "order_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-  "payment_id": "d4e5f6a7-b8c9-0123-def0-234567890123",
   "status": "payment_pending",
-  "message": "Оплата обрабатывается, ожидайте"
+  "message": "Оплата принята, ожидайте"
 }
 ```
+
+Payment Service обработает платёж асинхронно. Результат (успех/отказ) клиент получит через push-уведомление.
 
 **Ошибки:**
 

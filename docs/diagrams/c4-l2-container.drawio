@@ -1,4 +1,4 @@
-<mxGraphModel dx="1225" dy="746" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="780" math="0" shadow="0">
+<mxGraphModel dx="1438" dy="878" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="780" math="0" shadow="0">
   <root>
     <mxCell id="0" />
     <mxCell id="1" parent="0" />
@@ -71,16 +71,23 @@
     <mxCell id="e6" edge="1" parent="1" source="gw" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#707070;strokeWidth=1.5;fontSize=10;fontColor=#555555;" target="s4" value="WS">
       <mxGeometry relative="1" as="geometry" />
     </mxCell>
-    <mxCell id="e7" edge="1" parent="1" source="s2" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#707070;strokeWidth=1.5;fontSize=10;fontColor=#555555;" target="s3" value="gRPC (sync)">
-      <mxGeometry relative="1" x="-0.0588" y="-10" as="geometry">
+    <mxCell id="e7a" edge="1" parent="1" source="d3" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;fontColor=#888888;" target="s3" value="consume">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="e7b" edge="1" parent="1" source="d3" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;fontColor=#888888;" target="s2" value="consume">
+      <mxGeometry relative="1" x="0.0775" y="-1" as="geometry">
         <mxPoint as="offset" />
       </mxGeometry>
     </mxCell>
     <mxCell id="e8" edge="1" parent="1" source="s2" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;fontColor=#888888;" target="d3" value="produce">
-      <mxGeometry relative="1" as="geometry" />
+      <mxGeometry relative="1" x="0.2594" y="-1" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
     </mxCell>
     <mxCell id="e9" edge="1" parent="1" source="s3" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;fontColor=#888888;" target="d3" value="produce">
-      <mxGeometry relative="1" as="geometry" />
+      <mxGeometry relative="1" x="0.2701" y="-1" as="geometry">
+        <mxPoint as="offset" />
+      </mxGeometry>
     </mxCell>
     <mxCell id="e10" edge="1" parent="1" source="d3" style="endArrow=block;endFill=1;html=1;rounded=0;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=10;fontColor=#888888;" target="s5" value="consume">
       <mxGeometry relative="1" as="geometry" />
