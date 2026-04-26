@@ -1,0 +1,85 @@
+import http from 'k6/http';
+import { check, sleep } from 'k6';
+
+const base = __ENV.BASE_URL || 'http://127.0.0.1:8080';
+
+function randomUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+export const options = {
+  vus: 3,
+  duration: '45s',
+  thresholds: {
+    http_req_failed: ['rate<0.05'],
+    http_req_duration: ['p(99)<3000'],
+  },
+};
+
+export default function () {
+  const lat = 55.75;
+  const lon = 37.61;
+  const r = http.get(`${base}/api/v1/restaurants?lat=${lat}&lon=${lon}&radius=5000`);
+  check(r, { 'restaurants 200': (res) => res.status === 200 });
+
+  const menu = http.get(`${base}/api/v1/restaurants/f47ac10b-58cc-4372-a567-0e02b2c3d479/menu`);
+  check(menu, { 'menu 200': (res) => res.status === 200 });
+
+  const payload = JSON.stringify({
+    restaurant_id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+    items: [
+      { menu_item_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', quantity: 1 },
+      { menu_item_id: 'e3f4a5b6-c7d8-9012-cdef-123456789012', quantity: 1 },
+    ],
+    delivery_address: {
+      lat: 55.7558,
+      lon: 37.6173,
+      address_text: 'load test',
+    },
+    comment: 'k6',
+  });
+
+  const create = http.post(`${base}/api/v1/orders`, payload, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  check(create, { 'order 201': (res) => res.status === 201 });
+  if (create.status !== 201) {
+    sleep(1);
+    return;
+  }
+  let body;
+  try {
+    body = create.json();
+  } catch (e) {
+    sleep(1);
+    return;
+  }
+  if (!body || !body.order_id) {
+    sleep(1);
+    return;
+  }
+  const oid = body.order_id;
+
+  const idem = randomUUID();
+  const pay = http.post(
+    `${base}/api/v1/orders/${oid}/pay`,
+    JSON.stringify({ payment_method: 'card', card_token: 'tok_visa_4242' }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idem,
+      },
+    }
+  );
+  check(pay, { 'pay 202': (res) => res.status === 202 });
+
+  sleep(0.3);
+  const tr = http.get(`${base}/api/v1/orders/${oid}/tracking`);
+  check(tr, { 'tracking 200': (res) => res.status === 200 });
+
+  sleep(1);
+}
