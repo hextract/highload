@@ -1,7 +1,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const base = __ENV.BASE_URL || 'http://127.0.0.1:8080';
+const base = __ENV.BASE_URL || 'http://178.236.25.150:8080';
 
 function randomUUID() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
