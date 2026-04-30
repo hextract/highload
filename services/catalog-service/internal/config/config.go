@@ -7,18 +7,22 @@ import (
 )
 
 type Config struct {
-	PGDSN    string
-	HTTPAddr string
-	PgPoolMax int
-	PgPoolMin int
+	PGDSN                 string
+	HTTPAddr              string
+	RedisAddr             string
+	PgPoolMax             int
+	PgPoolMin             int
+	PgPoolMaxConnLifetime string
 }
 
 func Load() Config {
 	return Config{
-		PGDSN:     getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
-		HTTPAddr:  getenv("HTTP_ADDR", ":8081"),
-		PgPoolMax: getenvInt("PG_POOL_MAX_CONNS", 14),
-		PgPoolMin: getenvInt("PG_POOL_MIN_CONNS", 3),
+		PGDSN:                 getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
+		HTTPAddr:              getenv("HTTP_ADDR", ":8081"),
+		RedisAddr:             strings.TrimSpace(os.Getenv("REDIS_ADDR")),
+		PgPoolMax:             getenvInt("PG_POOL_MAX_CONNS", 20),
+		PgPoolMin:             getenvInt("PG_POOL_MIN_CONNS", 4),
+		PgPoolMaxConnLifetime: getenv("PG_POOL_MAX_CONN_LIFETIME", "10m"),
 	}
 }
 

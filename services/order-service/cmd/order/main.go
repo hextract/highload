@@ -29,7 +29,11 @@ func main() {
 	if poolCfg.MinConns > poolCfg.MaxConns {
 		poolCfg.MinConns = poolCfg.MaxConns
 	}
-	poolCfg.MaxConnLifetime = time.Hour
+	if d, err := time.ParseDuration(cfg.PgPoolMaxConnLifetime); err == nil && d > 0 {
+		poolCfg.MaxConnLifetime = d
+	} else {
+		poolCfg.MaxConnLifetime = 10 * time.Minute
+	}
 	poolCfg.MaxConnIdleTime = 30 * time.Minute
 	poolCfg.HealthCheckPeriod = time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)

@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	PGDSN        string
-	HTTPAddr     string
-	KafkaBrokers []string
-	PgPoolMax    int
-	PgPoolMin    int
+	PGDSN                 string
+	HTTPAddr              string
+	KafkaBrokers          []string
+	PgPoolMax             int
+	PgPoolMin             int
+	PgPoolMaxConnLifetime string
 }
 
 func Load() Config {
@@ -20,11 +21,12 @@ func Load() Config {
 		brokers[i] = strings.TrimSpace(brokers[i])
 	}
 	return Config{
-		PGDSN:        getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
-		HTTPAddr:     getenv("HTTP_ADDR", ":8083"),
-		KafkaBrokers: brokers,
-		PgPoolMax:    getenvInt("PG_POOL_MAX_CONNS", 8),
-		PgPoolMin:    getenvInt("PG_POOL_MIN_CONNS", 2),
+		PGDSN:                 getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
+		HTTPAddr:              getenv("HTTP_ADDR", ":8083"),
+		KafkaBrokers:          brokers,
+		PgPoolMax:             getenvInt("PG_POOL_MAX_CONNS", 10),
+		PgPoolMin:             getenvInt("PG_POOL_MIN_CONNS", 2),
+		PgPoolMaxConnLifetime: getenv("PG_POOL_MAX_CONN_LIFETIME", "10m"),
 	}
 }
 

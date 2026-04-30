@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -10,11 +11,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"highload/catalog/internal/cache"
 	"highload/catalog/internal/store"
 )
 
 type RestaurantHandler struct {
-	Catalog *store.Catalog
+	Catalog   *store.Catalog
+	MenuRedis *cache.MenuRedis
 }
 
 func (h *RestaurantHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +100,10 @@ func (h *RestaurantHandler) List(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+func menuCacheKey(restaurantID uuid.UUID) string {
+	return "menu:v1:" + restaurantID.String()
+}
+
 func (h *RestaurantHandler) Menu(w http.ResponseWriter, r *http.Request) {
 	ridStr := chi.URLParam(r, "restaurantID")
 	rid, err := uuid.Parse(ridStr)
@@ -104,13 +111,20 @@ func (h *RestaurantHandler) Menu(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid id"}`, http.StatusBadRequest)
 		return
 	}
-	ok, err := h.Catalog.RestaurantActive(r.Context(), rid)
-	if err != nil || !ok {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
-		return
+	ctx := r.Context()
+	if h.MenuRedis != nil {
+		if body, ok := h.MenuRedis.Get(ctx, menuCacheKey(rid)); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+			return
+		}
 	}
-	rows, err := h.Catalog.MenuRows(r.Context(), rid)
+	rows, err := h.Catalog.RestaurantMenu(ctx, rid)
 	if err != nil {
+		if errors.Is(err, store.ErrRestaurantUnavailable) {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 		slog.Error("menu", "err", err)
 		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
 		return
@@ -152,6 +166,15 @@ func (h *RestaurantHandler) Menu(w http.ResponseWriter, r *http.Request) {
 		Categories:   outCats,
 		UpdatedAt:    time.Now().UTC().Truncate(time.Second),
 	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		slog.Error("menu json", "err", err)
+		http.Error(w, `{"error":"internal"}`, http.StatusInternalServerError)
+		return
+	}
+	if h.MenuRedis != nil {
+		h.MenuRedis.Set(ctx, menuCacheKey(rid), body)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(out)
+	_, _ = w.Write(body)
 }

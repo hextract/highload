@@ -67,12 +67,22 @@ func (s *OrderStore) CreateOrder(ctx context.Context, in CreateOrderInput) (*Cre
 	if err != nil {
 		return nil, err
 	}
-	for _, ln := range in.Lines {
-		_, err = tx.Exec(ctx, `
-			INSERT INTO order_items (order_id, menu_item_id, name, quantity, unit_price, total_price)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			oid, ln.MenuItemID, ln.Name, ln.Qty, ln.Unit, ln.Subtotal)
-		if err != nil {
+	if len(in.Lines) > 0 {
+		batch := &pgx.Batch{}
+		for _, ln := range in.Lines {
+			batch.Queue(`
+				INSERT INTO order_items (order_id, menu_item_id, name, quantity, unit_price, total_price)
+				VALUES ($1, $2, $3, $4, $5, $6)`,
+				oid, ln.MenuItemID, ln.Name, ln.Qty, ln.Unit, ln.Subtotal)
+		}
+		br := tx.SendBatch(ctx, batch)
+		for range in.Lines {
+			if _, err := br.Exec(); err != nil {
+				_ = br.Close()
+				return nil, err
+			}
+		}
+		if err := br.Close(); err != nil {
 			return nil, err
 		}
 	}
@@ -111,7 +121,8 @@ func (s *OrderStore) Pay(ctx context.Context, orderID, idem uuid.UUID, paymentMe
 	defer tx.Rollback(ctx)
 
 	var status string
-	err = tx.QueryRow(ctx, `SELECT status FROM orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&status)
+	var total float64
+	err = tx.QueryRow(ctx, `SELECT status, total_amount FROM orders WHERE id = $1 FOR UPDATE`, orderID).Scan(&status, &total)
 	if err == pgx.ErrNoRows {
 		return nil, pgx.ErrNoRows
 	}
@@ -138,11 +149,6 @@ func (s *OrderStore) Pay(ctx context.Context, orderID, idem uuid.UUID, paymentMe
 	}
 	if status != "created" {
 		return nil, ErrOrderInvalidState
-	}
-
-	var total float64
-	if err := tx.QueryRow(ctx, `SELECT total_amount FROM orders WHERE id = $1`, orderID).Scan(&total); err != nil {
-		return nil, err
 	}
 	pid := uuid.New()
 	_, err = tx.Exec(ctx, `
