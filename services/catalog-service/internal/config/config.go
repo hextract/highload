@@ -1,16 +1,24 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"strings"
+)
 
 type Config struct {
 	PGDSN    string
 	HTTPAddr string
+	PgPoolMax int
+	PgPoolMin int
 }
 
 func Load() Config {
 	return Config{
-		PGDSN:    getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
-		HTTPAddr: getenv("HTTP_ADDR", ":8081"),
+		PGDSN:     getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
+		HTTPAddr:  getenv("HTTP_ADDR", ":8081"),
+		PgPoolMax: getenvInt("PG_POOL_MAX_CONNS", 14),
+		PgPoolMin: getenvInt("PG_POOL_MIN_CONNS", 3),
 	}
 }
 
@@ -19,4 +27,16 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func getenvInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }

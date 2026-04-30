@@ -84,3 +84,19 @@ CREATE TABLE saga_state (
     retry_count INT NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE EXTENSION IF NOT EXISTS cube;
+CREATE EXTENSION IF NOT EXISTS earthdistance;
+
+CREATE INDEX idx_restaurants_geo ON restaurants USING gist (
+    ll_to_earth(lat::double precision, lon::double precision)
+);
+
+CREATE INDEX idx_restaurants_cuisine_rating ON restaurants (cuisine_type, rating DESC)
+    WHERE is_active = true;
+
+CREATE INDEX idx_orders_user_created ON orders (user_id, created_at DESC);
+
+CREATE INDEX idx_menu_categories_restaurant ON menu_categories (restaurant_id);
+CREATE INDEX idx_menu_items_category ON menu_items (category_id);
+CREATE INDEX idx_order_items_order ON order_items (order_id);

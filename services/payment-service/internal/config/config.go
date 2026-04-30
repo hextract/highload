@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -9,6 +10,8 @@ type Config struct {
 	PGDSN        string
 	HTTPAddr     string
 	KafkaBrokers []string
+	PgPoolMax    int
+	PgPoolMin    int
 }
 
 func Load() Config {
@@ -20,6 +23,8 @@ func Load() Config {
 		PGDSN:        getenv("PG_DSN", "postgres://food:food@localhost:5432/fooddelivery?sslmode=disable"),
 		HTTPAddr:     getenv("HTTP_ADDR", ":8083"),
 		KafkaBrokers: brokers,
+		PgPoolMax:    getenvInt("PG_POOL_MAX_CONNS", 8),
+		PgPoolMin:    getenvInt("PG_POOL_MIN_CONNS", 2),
 	}
 }
 
@@ -28,4 +33,16 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func getenvInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }

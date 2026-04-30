@@ -17,7 +17,20 @@ import (
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, cfg.PGDSN)
+	poolCfg, err := pgxpool.ParseConfig(cfg.PGDSN)
+	if err != nil {
+		slog.Error("pg parse", "err", err)
+		os.Exit(1)
+	}
+	poolCfg.MaxConns = int32(cfg.PgPoolMax)
+	poolCfg.MinConns = int32(cfg.PgPoolMin)
+	if poolCfg.MinConns > poolCfg.MaxConns {
+		poolCfg.MinConns = poolCfg.MaxConns
+	}
+	poolCfg.MaxConnLifetime = time.Hour
+	poolCfg.MaxConnIdleTime = 30 * time.Minute
+	poolCfg.HealthCheckPeriod = time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		slog.Error("pg connect", "err", err)
 		os.Exit(1)
