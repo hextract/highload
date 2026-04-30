@@ -1,0 +1,288 @@
+from __future__ import annotations
+
+import argparse
+import random
+import uuid
+from pathlib import Path
+
+
+CUISINES = [
+    "russian",
+    "italian",
+    "japanese",
+    "american",
+    "georgian",
+    "chinese",
+    "indian",
+    "thai",
+    "mexican",
+    "vietnamese",
+    "korean",
+    "mediterranean",
+]
+
+CATEGORY_NAMES = [
+    "Салаты",
+    "Супы",
+    "Закуски",
+    "Основные блюда",
+    "Гриль",
+    "Паста и лапша",
+    "Пицца",
+    "Бургеры и сэндвичи",
+    "Рыба и морепродукты",
+    "Десерты",
+    "Напитки",
+    "Завтраки",
+]
+
+STREETS = [
+    "Ленина",
+    "Пушкина",
+    "Тверская",
+    "Садовая",
+    "Мира",
+    "Гагарина",
+    "Советская",
+    "Центральная",
+    "Молодежная",
+    "Парковая",
+]
+
+ADJECTIVES = [
+    "Городской",
+    "Домашний",
+    "Вкусный",
+    "Сытный",
+    "Яркий",
+    "Золотой",
+    "Теплый",
+    "Панорамный",
+    "Уютный",
+    "Семейный",
+]
+
+NOUNS = [
+    "Двор",
+    "Уголок",
+    "Маркет",
+    "Клуб",
+    "Квартал",
+    "Берег",
+    "Ритм",
+    "Очаг",
+    "Сад",
+    "Дом",
+]
+
+ITEM_PREFIXES = [
+    "Фирменный",
+    "Острый",
+    "Сливочный",
+    "Классический",
+    "Пряный",
+    "Хрустящий",
+    "Нежный",
+    "Большой",
+    "Сезонный",
+    "Домашний",
+]
+
+ITEM_BASES = [
+    "боул",
+    "ролл",
+    "стейк",
+    "салат",
+    "суп",
+    "бургер",
+    "сэндвич",
+    "поке",
+    "вок",
+    "паста",
+    "пицца",
+    "десерт",
+]
+
+
+def escape_sql(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def sql_row(values: list[str]) -> str:
+    return f"({', '.join(values)})"
+
+
+def generate_restaurant_name(idx: int, rng: random.Random) -> str:
+    adjective = rng.choice(ADJECTIVES)
+    noun = rng.choice(NOUNS)
+    return f"{adjective} {noun} #{idx + 1}"
+
+
+def generate(
+    restaurants_count: int,
+    menu_items_per_restaurant: int,
+    categories_per_restaurant: int,
+    seed: int,
+    output_path: Path,
+) -> None:
+    rng = random.Random(seed)
+
+    restaurant_rows: list[str] = []
+    category_rows: list[str] = []
+    menu_item_rows: list[str] = []
+
+    for rest_idx in range(restaurants_count):
+        restaurant_id = str(uuid.uuid4())
+        name = generate_restaurant_name(rest_idx, rng)
+        cuisine = rng.choice(CUISINES)
+        street = rng.choice(STREETS)
+        building = rng.randint(1, 250)
+        address = f"ул. {street}, {building}"
+        lat = f"{55.50 + rng.random() * 0.45:.6f}"
+        lon = f"{37.30 + rng.random() * 0.70:.6f}"
+        rating = f"{3.6 + rng.random() * 1.4:.1f}"
+        avg_price = str(rng.randint(250, 2200))
+        delivery_time_min = str(rng.randint(20, 75))
+        image_url = f"https://example.domain/restaurant/{rest_idx + 1}.jpg"
+
+        restaurant_rows.append(
+            sql_row(
+                [
+                    f"'{restaurant_id}'",
+                    f"'{escape_sql(name)}'",
+                    f"'{cuisine}'",
+                    f"'{escape_sql(address)}'",
+                    lat,
+                    lon,
+                    rating,
+                    avg_price,
+                    "true",
+                    f"'{image_url}'",
+                    delivery_time_min,
+                ]
+            )
+        )
+
+        category_ids: list[str] = []
+        for cat_idx in range(categories_per_restaurant):
+            category_id = str(uuid.uuid4())
+            category_name = CATEGORY_NAMES[cat_idx % len(CATEGORY_NAMES)]
+            category_ids.append(category_id)
+            category_rows.append(
+                sql_row(
+                    [
+                        f"'{category_id}'",
+                        f"'{restaurant_id}'",
+                        f"'{escape_sql(category_name)}'",
+                        str(cat_idx),
+                    ]
+                )
+            )
+
+        for item_idx in range(menu_items_per_restaurant):
+            item_id = str(uuid.uuid4())
+            category_id = category_ids[item_idx % categories_per_restaurant]
+            item_name = (
+                f"{rng.choice(ITEM_PREFIXES)} {rng.choice(ITEM_BASES)}"
+                f" {item_idx + 1}"
+            )
+            description = f"{item_name}, ингредиенты по фирменному рецепту"
+            price = str(rng.randint(150, 1990))
+            image_url = f"https://example.domain/menu/{rest_idx + 1}/{item_idx + 1}.jpg"
+            is_available = "true" if rng.random() < 0.96 else "false"
+
+            menu_item_rows.append(
+                sql_row(
+                    [
+                        f"'{item_id}'",
+                        f"'{category_id}'",
+                        f"'{escape_sql(item_name)}'",
+                        f"'{escape_sql(description)}'",
+                        price,
+                        f"'{image_url}'",
+                        is_available,
+                    ]
+                )
+            )
+
+    lines = [
+        "-- This file is auto-generated by scripts/generate_mock_data.py",
+        f"-- seed={seed}, restaurants={restaurants_count}, categories_per_restaurant={categories_per_restaurant}, menu_items_per_restaurant={menu_items_per_restaurant}",
+        "",
+        "INSERT INTO restaurants (id, name, cuisine_type, address, lat, lon, rating, avg_price, is_active, image_url, delivery_time_min)",
+        "VALUES",
+        ",\n".join(restaurant_rows) + ";",
+        "",
+        "INSERT INTO menu_categories (id, restaurant_id, name, sort_order)",
+        "VALUES",
+        ",\n".join(category_rows) + ";",
+        "",
+        "INSERT INTO menu_items (id, category_id, name, description, price, image_url, is_available)",
+        "VALUES",
+        ",\n".join(menu_item_rows) + ";",
+        "",
+    ]
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Generate SQL mock data for local bootstrap."
+    )
+    parser.add_argument(
+        "--restaurants",
+        type=int,
+        default=1000,
+        help="How many restaurants to generate.",
+    )
+    parser.add_argument(
+        "--menu-items-per-restaurant",
+        type=int,
+        default=100,
+        help="How many menu items to generate per restaurant.",
+    )
+    parser.add_argument(
+        "--categories-per-restaurant",
+        type=int,
+        default=12,
+        help="How many categories to generate per restaurant.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Deterministic random seed.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("deploy/init-db/002_mock_data.sql"),
+        help="Output SQL file path.",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.restaurants <= 0:
+        raise ValueError("--restaurants must be > 0")
+    if args.menu_items_per_restaurant <= 0:
+        raise ValueError("--menu-items-per-restaurant must be > 0")
+    if args.categories_per_restaurant <= 0:
+        raise ValueError("--categories-per-restaurant must be > 0")
+
+    generate(
+        restaurants_count=args.restaurants,
+        menu_items_per_restaurant=args.menu_items_per_restaurant,
+        categories_per_restaurant=args.categories_per_restaurant,
+        seed=args.seed,
+        output_path=args.output,
+    )
+
+
+if __name__ == "__main__":
+    main()
