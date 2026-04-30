@@ -18,6 +18,33 @@ docker-compose up --build
 
 Остановка: `docker-compose down` (с томом БД: `docker-compose down -v`).
 
+Скрипты из `deploy/init-db/` применяются Postgres автоматически **только при первой инициализации volume**.
+Если меняли `002_mock_data.sql`, поднимайте с пересозданием тома:
+
+```bash
+docker-compose down -v && docker-compose up --build
+```
+
+## Генерация большого mock data
+
+По умолчанию генерируется:
+- ~1000 ресторанов
+- 12 категорий на ресторан
+- 100 позиций меню на ресторан
+
+Команда:
+
+```bash
+python3 scripts/generate_mock_data.py
+```
+
+Файл назначения по умолчанию: `deploy/init-db/002_mock_data.sql`.
+Параметры можно менять, например:
+
+```bash
+python3 scripts/generate_mock_data.py --restaurants 1500 --menu-items-per-restaurant 120 --seed 2026
+```
+
 ## Как проверить (curl)
 
 Свой хост вместо `127.0.0.1` при проверке с другой машины.
