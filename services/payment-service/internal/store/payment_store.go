@@ -35,3 +35,16 @@ func (s *PaymentStore) MarkSucceeded(ctx context.Context, paymentID uuid.UUID, p
 	}
 	return orderID, paymentIDOut, true, nil
 }
+
+func (s *PaymentStore) PaymentOutcome(ctx context.Context, paymentID uuid.UUID) (orderID uuid.UUID, status string, found bool, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT order_id, status FROM payments WHERE id = $1`, paymentID).
+		Scan(&orderID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", false, nil
+	}
+	if err != nil {
+		return uuid.Nil, "", false, err
+	}
+	return orderID, status, true, nil
+}

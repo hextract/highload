@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/segmentio/kafka-go"
 
 	"highload/payment/internal/config"
 	"highload/payment/internal/events"
@@ -20,7 +19,20 @@ import (
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, cfg.PGDSN)
+	poolCfg, err := pgxpool.ParseConfig(cfg.PGDSN)
+	if err != nil {
+		slog.Error("pg parse", "err", err)
+		os.Exit(1)
+	}
+	poolCfg.MaxConns = int32(cfg.PgPoolMax)
+	poolCfg.MinConns = int32(cfg.PgPoolMin)
+	if poolCfg.MinConns > poolCfg.MaxConns {
+		poolCfg.MinConns = poolCfg.MaxConns
+	}
+	poolCfg.MaxConnLifetime = time.Hour
+	poolCfg.MaxConnIdleTime = 30 * time.Minute
+	poolCfg.HealthCheckPeriod = time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		slog.Error("pg", "err", err)
 		os.Exit(1)
@@ -28,16 +40,17 @@ func main() {
 	defer pool.Close()
 
 	st := store.New(pool)
-	wResults := &kafka.Writer{
-		Addr:         kafka.TCP(cfg.KafkaBrokers...),
-		Topic:        events.TopicPaymentResults,
-		Balancer:     &kafka.Hash{},
-		RequiredAcks: kafka.RequireOne,
-		Async:        false,
-	}
+	wResults := events.NewPaymentResultWriter(cfg.KafkaBrokers)
 	defer func() { _ = wResults.Close() }()
+	wDLQ := events.NewRequestsDeadLetterWriter(cfg.KafkaBrokers)
+	defer func() { _ = wDLQ.Close() }()
 
-	go worker.RunPaymentRequests(ctx, cfg.KafkaBrokers, &worker.Bus{Store: st, Writer: wResults})
+	go worker.RunPaymentRequests(ctx, cfg.KafkaBrokers, &worker.Bus{
+		Store:    st,
+		Writer:   wResults,
+		DLQ:      wDLQ,
+		TopicSrc: events.TopicPaymentRequests,
+	})
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPAddr,

@@ -2,7 +2,9 @@ package worker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -14,8 +16,10 @@ import (
 )
 
 type Bus struct {
-	Store  *store.PaymentStore
-	Writer *kafka.Writer
+	Store    *store.PaymentStore
+	Writer   *kafka.Writer
+	DLQ      *kafka.Writer
+	TopicSrc string
 }
 
 func RunPaymentRequests(ctx context.Context, brokers []string, bus *Bus) {
@@ -24,9 +28,15 @@ func RunPaymentRequests(ctx context.Context, brokers []string, bus *Bus) {
 		GroupID:               "payment-service",
 		Topic:                 events.TopicPaymentRequests,
 		MinBytes:              1,
-		MaxBytes:              10 << 20,
+		MaxBytes:              1 << 20,
+		SessionTimeout:        45 * time.Second,
+		RebalanceTimeout:      70 * time.Second,
+		HeartbeatInterval:     10 * time.Second,
 		StartOffset:           kafka.FirstOffset,
 		WatchPartitionChanges: true,
+		Dialer: &kafka.Dialer{
+			Timeout: 12 * time.Second,
+		},
 	})
 	defer func() { _ = r.Close() }()
 
@@ -40,61 +50,141 @@ func RunPaymentRequests(ctx context.Context, brokers []string, bus *Bus) {
 			time.Sleep(time.Second)
 			continue
 		}
-		handle(ctx, bus, m.Value)
-		if err := r.CommitMessages(ctx, m); err != nil {
-			slog.Error("commit", "err", err)
+		decision := handleMessage(ctx, bus, m)
+		switch decision {
+		case decisionCommit:
+			if err := r.CommitMessages(ctx, m); err != nil {
+				slog.Error("commit", "err", err)
+			}
+		case decisionRetry:
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 }
 
-func handle(ctx context.Context, bus *Bus, raw []byte) {
+type decision int
+
+const (
+	decisionCommit decision = iota
+	decisionRetry
+)
+
+func handleMessage(ctx context.Context, bus *Bus, m kafka.Message) decision {
 	var env events.Envelope
-	if err := json.Unmarshal(raw, &env); err != nil {
-		slog.Error("json", "err", err)
-		return
+	if err := json.Unmarshal(m.Value, &env); err != nil {
+		if err := writeDLQ(ctx, bus, m, "json_envelope", err.Error()); err != nil {
+			slog.Error("dlq", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
 	}
 	if env.Type != "PaymentRequest" {
-		return
+		if err := writeDLQ(ctx, bus, m, "unexpected_type", env.Type); err != nil {
+			slog.Error("dlq", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
 	}
 	var req events.PaymentRequestPayload
 	if err := json.Unmarshal(env.Payload, &req); err != nil {
-		slog.Error("payload", "err", err)
-		return
+		if err := writeDLQ(ctx, bus, m, "json_payload", err.Error()); err != nil {
+			slog.Error("dlq", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
 	}
 	pid, err := uuid.Parse(req.PaymentID)
 	if err != nil {
-		return
+		if err := writeDLQ(ctx, bus, m, "bad_payment_id", err.Error()); err != nil {
+			slog.Error("dlq", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
 	}
+
 	time.Sleep(80 * time.Millisecond)
 
 	provID := uuid.New().String()
 	oid, _, ok, err := bus.Store.MarkSucceeded(ctx, pid, "mock_"+provID)
 	if err != nil {
 		slog.Error("db", "err", err)
-		return
+		return decisionRetry
 	}
-	if !ok {
-		return
+	if ok {
+		if err := writePaymentSucceeded(ctx, bus.Writer, oid, req.PaymentID); err != nil {
+			slog.Error("kafka publish", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
 	}
 
+	orderID, status, found, err := bus.Store.PaymentOutcome(ctx, pid)
+	if err != nil {
+		slog.Error("db outcome", "err", err)
+		return decisionRetry
+	}
+	if !found {
+		return decisionCommit
+	}
+	switch status {
+	case "succeeded":
+		if err := writePaymentSucceeded(ctx, bus.Writer, orderID, req.PaymentID); err != nil {
+			slog.Error("kafka publish replay", "err", err)
+			return decisionRetry
+		}
+		return decisionCommit
+	case "pending":
+		return decisionRetry
+	default:
+		return decisionCommit
+	}
+}
+
+func writePaymentSucceeded(ctx context.Context, w *kafka.Writer, orderID uuid.UUID, paymentID string) error {
 	inner, err := json.Marshal(events.PaymentResultPayload{
-		OrderID:   oid.String(),
-		PaymentID: req.PaymentID,
+		OrderID:   orderID.String(),
+		PaymentID: paymentID,
 	})
 	if err != nil {
-		slog.Error("marshal inner", "err", err)
-		return
+		return err
 	}
 	out, err := json.Marshal(events.Envelope{
 		Type:    "PaymentSucceeded",
 		Payload: inner,
 	})
 	if err != nil {
-		slog.Error("marshal", "err", err)
-		return
+		return err
 	}
-	msg := kafka.Message{Key: []byte(oid.String()), Value: out}
-	if err := bus.Writer.WriteMessages(ctx, msg); err != nil {
-		slog.Error("kafka publish", "err", err)
+	msg := kafka.Message{Key: []byte(orderID.String()), Value: out}
+	return w.WriteMessages(ctx, msg)
+}
+
+type dlqRecord struct {
+	Reason      string `json:"reason"`
+	Detail      string `json:"detail,omitempty"`
+	SourceTopic string `json:"source_topic"`
+	Partition   int    `json:"partition"`
+	Offset      int64  `json:"offset"`
+	PayloadB64  string `json:"payload_b64"`
+}
+
+func writeDLQ(ctx context.Context, bus *Bus, m kafka.Message, reason, detail string) error {
+	if bus.DLQ == nil || bus.TopicSrc == "" {
+		return errors.New("dlq writer not configured")
 	}
+	payload, err := json.Marshal(dlqRecord{
+		Reason:      reason,
+		Detail:      detail,
+		SourceTopic: bus.TopicSrc,
+		Partition:   m.Partition,
+		Offset:      m.Offset,
+		PayloadB64:  base64.StdEncoding.EncodeToString(m.Value),
+	})
+	if err != nil {
+		return err
+	}
+	return bus.DLQ.WriteMessages(ctx, kafka.Message{
+		Key:   m.Key,
+		Value: payload,
+	})
 }

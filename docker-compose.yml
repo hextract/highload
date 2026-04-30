@@ -1,6 +1,33 @@
 services:
+  kafka-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: no
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for t in payment.requests payment.results payment.requests.dlq payment.results.dlq; do
+          rpk topic create -X brokers=redpanda:9092 "$$t" --partitions 4 --replicas 1 || true
+        done
+
   postgres:
     image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - max_connections=128
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - random_page_cost=1.25
     environment:
       POSTGRES_USER: food
       POSTGRES_PASSWORD: food
@@ -90,6 +117,8 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
       catalog-service:
         condition: service_healthy
     healthcheck:
@@ -119,6 +148,8 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/readyz | grep -q ok"]
       interval: 5s

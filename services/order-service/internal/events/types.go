@@ -3,8 +3,9 @@ package events
 import "encoding/json"
 
 const (
-	TopicPaymentRequests = "payment.requests"
-	TopicPaymentResults  = "payment.results"
+	TopicPaymentRequests    = "payment.requests"
+	TopicPaymentResults     = "payment.results"
+	TopicPaymentResultsDLQ = "payment.results.dlq"
 )
 
 type Envelope struct {
