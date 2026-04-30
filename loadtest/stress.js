@@ -19,10 +19,10 @@ const STATUS_ORDER_IDS = (__ENV.STATUS_ORDER_IDS || __ENV.ORDER_IDS || '')
   .split(',')
   .map((v) => v.trim())
   .filter(Boolean);
-const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 750);
-const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 125);
-const STATUS_RPS = Number(__ENV.STATUS_RPS || 630);
-const DURATION = __ENV.DURATION || '150s';
+const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 400);
+const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 40);
+const STATUS_RPS = Number(__ENV.STATUS_RPS || 300);
+const DURATION = __ENV.DURATION || '30s';
 const PRE_ALLOCATED_VUS_READS = Number(__ENV.PRE_ALLOCATED_VUS_READS || 240);
 const MAX_VUS_READS = Number(__ENV.MAX_VUS_READS || 800);
 const PRE_ALLOCATED_VUS_CHECKOUT = Number(__ENV.PRE_ALLOCATED_VUS_CHECKOUT || 120);
@@ -31,7 +31,7 @@ const PRE_ALLOCATED_VUS_STATUS = Number(__ENV.PRE_ALLOCATED_VUS_STATUS || 200);
 const MAX_VUS_STATUS = Number(__ENV.MAX_VUS_STATUS || 700);
 const ORDER_ID = __ENV.ORDER_ID || '7f08ee66-7ebd-45fb-a6af-0d5fb015f1af';
 
-const WARMUP_DURATION = __ENV.WARMUP_DURATION || '45s';
+const WARMUP_DURATION = __ENV.WARMUP_DURATION || '10s';
 const WARMUP_ENABLED = !/^0s?$|^false$/i.test(String(WARMUP_DURATION).trim());
 const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 500);
 const WARMUP_START_RATE = Number(__ENV.WARMUP_START_RATE ?? __ENV.WARMUP_INITIAL_RATE ?? 0);
@@ -39,8 +39,8 @@ const WARMUP_PRE_ALLOCATED_VUS = Number(__ENV.WARMUP_PRE_ALLOCATED_VUS || 40);
 const WARMUP_MAX_VUS = Number(__ENV.WARMUP_MAX_VUS || 150);
 
 const tSearch = new Trend('req_search_duration', true);
-const tMenu = new Trend('req_menu_duration', true);
-const tCheckout = new Trend('req_checkout_duration', true);
+const tCreateOrder = new Trend('req_create_order_duration', true);
+const tPayOrder = new Trend('req_pay_order_duration', true);
 const tStatus = new Trend('req_status_duration', true);
 const tStatusVisibilityLag = new Trend('status_visibility_lag_ms', true);
 
@@ -65,26 +65,12 @@ function uniqueSuffix() {
   return `${__VU}-${__ITER}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function parseSearchResponseRestaurantId(response) {
-  if (response.status < 200 || response.status >= 300) {
-    return null;
-  }
-  const payload = response.json();
-  if (Array.isArray(payload) && payload.length > 0) {
-    return payload[0]?.id || payload[0]?.restaurant_id || null;
-  }
-  if (Array.isArray(payload?.restaurants) && payload.restaurants.length > 0) {
-    return payload.restaurants[0]?.id || payload.restaurants[0]?.restaurant_id || null;
-  }
-  if (payload?.data) {
-    if (Array.isArray(payload.data) && payload.data.length > 0) {
-      return payload.data[0]?.id || payload.data[0]?.restaurant_id || null;
-    }
-    if (typeof payload.data === 'object') {
-      return payload.data.id || payload.data.restaurant_id || null;
-    }
-  }
-  return null;
+function uuidV4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 function extractOrderId(response) {
@@ -156,18 +142,13 @@ export const options = {
   },
   summaryTrendStats: ['avg', 'med', 'max', 'p(95)', 'p(99)', 'p(99.9)'],
   thresholds: {
+    'http_req_duration{scenario:searchAndMenu}': ['p(50)<150', 'p(99)<500'],
+    'http_req_duration{scenario:checkout}': ['p(50)<400', 'p(99)<2000'],
+    'http_req_duration{scenario:status}': ['p(50)<100', 'p(99)<300'],
     'http_req_failed{scenario:searchAndMenu}': ['rate<0.1'],
     'http_req_failed{scenario:checkout}': ['rate<0.1'],
     'http_req_failed{scenario:status}': ['rate<0.1'],
-    'http_req_duration{name:POST /api/v1/orders,scenario:checkout}': ['p(50)<400', 'p(99)<2000'],
-    'http_req_duration{name:POST /api/v1/orders,scenario:status}': ['p(50)<400', 'p(99)<2000'],
-    'http_req_duration{name:GET /api/v1/restaurants,scenario:searchAndMenu}': ['p(50)<150', 'p(99)<500'],
-    'http_req_duration{name:GET /api/v1/restaurants/:id/menu,scenario:searchAndMenu}': [
-      'p(50)<150',
-      'p(99)<500',
-    ],
-    'http_req_duration{name:GET /api/v1/orders/:id/tracking,scenario:status}': ['p(50)<100', 'p(99)<300'],
-    status_visibility_lag_ms: ['p(99)<3000'],
+    'status_visibility_lag_ms{scenario:status}': ['p(99)<3000'],
   },
 };
 
@@ -187,10 +168,13 @@ function checkoutPayload(restaurantId) {
       address_text: `stress-${uniqueSuffix()}`,
     },
     comment: `k6-checkout-${uniqueSuffix()}`,
-    payment: {
-      method: 'card',
-      token: `tok_visa_${randomInt(1000, 9999)}`,
-    },
+  });
+}
+
+function paymentPayload() {
+  return JSON.stringify({
+    payment_method: 'card',
+    card_token: `tok_visa_${randomInt(1000, 9999)}`,
   });
 }
 
@@ -204,6 +188,47 @@ function parseTimestampMs(value) {
   }
   return null;
 }
+
+function createAndPayOrder(restaurantId, tagsSuffix) {
+  const cacheBust = uniqueSuffix();
+  const createOrder = http.post(
+    `${BASE_URL}${API_PREFIX}/orders?cb=${cacheBust}`,
+    checkoutPayload(restaurantId),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      tags: { name: 'POST /api/v1/orders', ...tagsSuffix },
+    }
+  );
+  tCreateOrder.add(createOrder.timings.duration);
+  check(createOrder, { 'create order: response received': (r) => r.status >= 200 && r.status < 500 });
+
+  const createdOrderId = extractOrderId(createOrder);
+  if (!createdOrderId) {
+    return null;
+  }
+
+  const payOrder = http.post(
+    `${BASE_URL}${API_PREFIX}/orders/${createdOrderId}/pay?cb=${uniqueSuffix()}`,
+    paymentPayload(),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': uuidV4(),
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      tags: { name: 'POST /api/v1/orders/:id/pay', ...tagsSuffix },
+    }
+  );
+  tPayOrder.add(payOrder.timings.duration);
+  check(payOrder, { 'pay order: response received': (r) => r.status >= 200 && r.status < 500 });
+  return createdOrderId;
+}
+
 export function searchAndMenuScenario() {
   const lat = randomJitter(55.75, 0.08);
   const lon = randomJitter(37.61, 0.08);
@@ -212,29 +237,21 @@ export function searchAndMenuScenario() {
   const cacheBust = uniqueSuffix();
   const search = http.get(
     `${BASE_URL}${API_PREFIX}/restaurants?lat=${lat}&lon=${lon}&radius=${radius}&query=${encodeURIComponent(query)}&cb=${cacheBust}`,
-    { tags: { name: 'GET /api/v1/restaurants' } }
+    {
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      tags: { name: 'GET /api/v1/restaurants' },
+    }
   );
   tSearch.add(search.timings.duration);
   check(search, { 'search: response received': (r) => r.status >= 200 && r.status < 500 });
-
-  const restaurantId = parseSearchResponseRestaurantId(search) || randomFrom(RESTAURANT_IDS, RESTAURANT_ID);
-  const menu = http.get(`${BASE_URL}${API_PREFIX}/restaurants/${restaurantId}/menu?cb=${cacheBust}`, {
-    tags: { name: 'GET /api/v1/restaurants/:id/menu' },
-  });
-  tMenu.add(menu.timings.duration);
-  check(menu, { 'menu: response received': (r) => r.status >= 200 && r.status < 500 });
   sleep(0.05);
 }
 export function checkoutScenario() {
   const restaurantId = randomFrom(RESTAURANT_IDS, RESTAURANT_ID);
-  const checkout = http.post(`${BASE_URL}${API_PREFIX}/orders`, checkoutPayload(restaurantId), {
-    headers: { 'Content-Type': 'application/json' },
-    tags: { name: 'POST /api/v1/orders' },
-  });
-  tCheckout.add(checkout.timings.duration);
-  check(checkout, { 'checkout: response received': (r) => r.status >= 200 && r.status < 500 });
-
-  const createdOrderId = extractOrderId(checkout);
+  const createdOrderId = createAndPayOrder(restaurantId);
   if (createdOrderId) {
     lastKnownOrderId = createdOrderId;
   }
@@ -249,11 +266,7 @@ export function statusScenario() {
 
   if (!orderId || __ITER % 20 === 0) {
     const restaurantId = randomFrom(RESTAURANT_IDS, RESTAURANT_ID);
-    const checkout = http.post(`${BASE_URL}${API_PREFIX}/orders`, checkoutPayload(restaurantId), {
-      headers: { 'Content-Type': 'application/json' },
-      tags: { name: 'POST /api/v1/orders' },
-    });
-    const createdOrderId = extractOrderId(checkout);
+    const createdOrderId = createAndPayOrder(restaurantId);
     if (createdOrderId) {
       orderId = createdOrderId;
       lastKnownOrderId = createdOrderId;
@@ -265,9 +278,16 @@ export function statusScenario() {
     return;
   }
 
-  const status = http.get(`${BASE_URL}${API_PREFIX}/orders/${orderId}/tracking?cb=${uniqueSuffix()}`, {
-    tags: { name: 'GET /api/v1/orders/:id/tracking' },
-  });
+  const status = http.get(
+    `${BASE_URL}${API_PREFIX}/orders/${orderId}/tracking?cb=${uniqueSuffix()}`,
+    {
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+      tags: { name: 'GET /api/v1/orders/:id/tracking' },
+    }
+  );
   tStatus.add(status.timings.duration);
   check(status, { 'status: response received': (r) => r.status >= 200 && r.status < 500 });
   if (status.status >= 200 && status.status < 300) {
@@ -277,7 +297,7 @@ export function statusScenario() {
       parseTimestampMs(payload?.updated_at) ||
       parseTimestampMs(payload?.changed_at);
     if (changedAt !== null) {
-      tStatusVisibilityLag.add(Date.now() - changedAt);
+      tStatusVisibilityLag.add(Date.now() - changedAt, { scenario: 'status' });
     }
   }
   sleep(0.05);

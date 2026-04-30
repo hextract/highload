@@ -71,10 +71,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.35"
+          cpus: "0.45"
           memory: 256M
     mem_limit: 256m
-    cpus: 0.35
+    cpus: 0.45
 
   order-service:
     build:
@@ -101,10 +101,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.35"
+          cpus: "0.55"
           memory: 256M
     mem_limit: 256m
-    cpus: 0.35
+    cpus: 0.55
 
   payment-service:
     build:
@@ -151,10 +151,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     deploy:
       resources:
         limits:
-          cpus: "0.15"
-          memory: 64M
-    mem_limit: 64m
-    cpus: 0.15
+          cpus: "1.50"
+          memory: 256M
+    mem_limit: 256m
+    cpus: 1.5
