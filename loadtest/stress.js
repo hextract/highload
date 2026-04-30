@@ -19,9 +19,9 @@ const STATUS_ORDER_IDS = (__ENV.STATUS_ORDER_IDS || __ENV.ORDER_IDS || '')
   .split(',')
   .map((v) => v.trim())
   .filter(Boolean);
-const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 150);
-const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 30);
-const STATUS_RPS = Number(__ENV.STATUS_RPS || 150);
+const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 2800);
+const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 550);
+const STATUS_RPS = Number(__ENV.STATUS_RPS || 2800);
 const DURATION = __ENV.DURATION || '120s';
 const PRE_ALLOCATED_VUS_READS = Number(__ENV.PRE_ALLOCATED_VUS_READS || 240);
 const MAX_VUS_READS = Number(__ENV.MAX_VUS_READS || 800);
@@ -33,7 +33,7 @@ const ORDER_ID = __ENV.ORDER_ID || '';
 
 const WARMUP_DURATION = __ENV.WARMUP_DURATION || '40s';
 const WARMUP_ENABLED = !/^0s?$|^false$/i.test(String(WARMUP_DURATION).trim());
-const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 40);
+const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 550);
 const WARMUP_START_RATE = Number(__ENV.WARMUP_START_RATE ?? __ENV.WARMUP_INITIAL_RATE ?? 0);
 const WARMUP_PRE_ALLOCATED_VUS = Number(__ENV.WARMUP_PRE_ALLOCATED_VUS || 40);
 const WARMUP_MAX_VUS = Number(__ENV.WARMUP_MAX_VUS || 150);
