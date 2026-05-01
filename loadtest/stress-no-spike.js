@@ -24,21 +24,19 @@ const STATUS_ORDER_IDS = (__ENV.STATUS_ORDER_IDS || __ENV.ORDER_IDS || '')
 // const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 85);
 // const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 20);
 // const STATUS_RPS = Number(__ENV.STATUS_RPS || 65);
-// const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 20);
-
 // iter 1
 // const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 180);
 // const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 30);
 // const STATUS_RPS = Number(__ENV.STATUS_RPS || 150);
-// const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 30);
-
 // iter 2-3
 const SEARCH_AND_MENU_RPS = Number(__ENV.SEARCH_AND_MENU_RPS || 2800);
 const CHECKOUT_RPS = Number(__ENV.CHECKOUT_RPS || 550);
 const STATUS_RPS = Number(__ENV.STATUS_RPS || 2800);
-const WARMUP_RATE = Number(__ENV.WARMUP_RATE || 2500);
 
 const DURATION = __ENV.DURATION || '120s';
+const MAIN_RAMP_DURATION = __ENV.MAIN_RAMP_DURATION || '120s';
+const MAIN_ARRIVAL_START_RATE = Number(__ENV.MAIN_START_RATE ?? __ENV.MAIN_ARRIVAL_START_RATE ?? 0);
+const USE_MAIN_RAMP = !/^0s?$/i.test(String(MAIN_RAMP_DURATION).trim());
 const PRE_ALLOCATED_VUS_READS = Number(__ENV.PRE_ALLOCATED_VUS_READS || 240);
 const MAX_VUS_READS = Number(__ENV.MAX_VUS_READS || 800);
 const PRE_ALLOCATED_VUS_CHECKOUT = Number(__ENV.PRE_ALLOCATED_VUS_CHECKOUT || 120);
@@ -47,11 +45,6 @@ const PRE_ALLOCATED_VUS_STATUS = Number(__ENV.PRE_ALLOCATED_VUS_STATUS || 200);
 const MAX_VUS_STATUS = Number(__ENV.MAX_VUS_STATUS || 700);
 const ORDER_ID = __ENV.ORDER_ID || '';
 
-const WARMUP_DURATION = __ENV.WARMUP_DURATION || '40s';
-const WARMUP_ENABLED = !/^0s?$|^false$/i.test(String(WARMUP_DURATION).trim());
-const WARMUP_START_RATE = Number(__ENV.WARMUP_START_RATE ?? __ENV.WARMUP_INITIAL_RATE ?? 0);
-const WARMUP_PRE_ALLOCATED_VUS = Number(__ENV.WARMUP_PRE_ALLOCATED_VUS || 40);
-const WARMUP_MAX_VUS = Number(__ENV.WARMUP_MAX_VUS || 150);
 const SEARCH_ONLY_RATIO = Number(__ENV.SEARCH_ONLY_RATIO || 0.55);
 const MENU_VIEW_RATIO = Number(__ENV.MENU_VIEW_RATIO || 0.35);
 const MENU_CACHE_SIZE = Number(__ENV.MENU_CACHE_SIZE || 250);
@@ -261,57 +254,48 @@ function discoverRestaurants() {
   return ids.length;
 }
 
-const MAIN_SCENARIO_START = WARMUP_ENABLED ? WARMUP_DURATION : null;
+function mainArrivalScenario(execFn, targetRate, preAllocatedVUs, maxVUs) {
+  const base = {
+    exec: execFn,
+    timeUnit: '1s',
+    preAllocatedVUs,
+    maxVUs,
+    gracefulStop: '30s',
+  };
+  if (USE_MAIN_RAMP) {
+    return {
+      ...base,
+      executor: 'ramping-arrival-rate',
+      startRate: MAIN_ARRIVAL_START_RATE,
+      stages: [
+        { duration: MAIN_RAMP_DURATION, target: targetRate },
+        { duration: DURATION, target: targetRate },
+      ],
+    };
+  }
+  return {
+    ...base,
+    executor: 'constant-arrival-rate',
+    rate: targetRate,
+    duration: DURATION,
+  };
+}
 
 export const options = {
   scenarios: {
-    ...(WARMUP_ENABLED
-      ? {
-          warmup: {
-            executor: 'ramping-arrival-rate',
-            exec: 'warmupIteration',
-            startRate: WARMUP_START_RATE,
-            timeUnit: '1s',
-            stages: [{ duration: WARMUP_DURATION, target: WARMUP_RATE }],
-            preAllocatedVUs: WARMUP_PRE_ALLOCATED_VUS,
-            maxVUs: WARMUP_MAX_VUS,
-            gracefulStop: '30s',
-          },
-        }
-      : {}),
-    searchAndMenu: {
-      executor: 'constant-arrival-rate',
-      exec: 'searchAndMenuScenario',
-      rate: SEARCH_AND_MENU_RPS,
-      timeUnit: '1s',
-      duration: DURATION,
-      preAllocatedVUs: PRE_ALLOCATED_VUS_READS,
-      maxVUs: MAX_VUS_READS,
-      ...(MAIN_SCENARIO_START ? { startTime: MAIN_SCENARIO_START } : {}),
-      gracefulStop: '30s',
-    },
-    checkout: {
-      executor: 'constant-arrival-rate',
-      exec: 'checkoutScenario',
-      rate: CHECKOUT_RPS,
-      timeUnit: '1s',
-      duration: DURATION,
-      preAllocatedVUs: PRE_ALLOCATED_VUS_CHECKOUT,
-      maxVUs: MAX_VUS_CHECKOUT,
-      ...(MAIN_SCENARIO_START ? { startTime: MAIN_SCENARIO_START } : {}),
-      gracefulStop: '30s',
-    },
-    status: {
-      executor: 'constant-arrival-rate',
-      exec: 'statusScenario',
-      rate: STATUS_RPS,
-      timeUnit: '1s',
-      duration: DURATION,
-      preAllocatedVUs: PRE_ALLOCATED_VUS_STATUS,
-      maxVUs: MAX_VUS_STATUS,
-      ...(MAIN_SCENARIO_START ? { startTime: MAIN_SCENARIO_START } : {}),
-      gracefulStop: '30s',
-    },
+    searchAndMenu: mainArrivalScenario(
+      'searchAndMenuScenario',
+      SEARCH_AND_MENU_RPS,
+      PRE_ALLOCATED_VUS_READS,
+      MAX_VUS_READS
+    ),
+    checkout: mainArrivalScenario(
+      'checkoutScenario',
+      CHECKOUT_RPS,
+      PRE_ALLOCATED_VUS_CHECKOUT,
+      MAX_VUS_CHECKOUT
+    ),
+    status: mainArrivalScenario('statusScenario', STATUS_RPS, PRE_ALLOCATED_VUS_STATUS, MAX_VUS_STATUS),
   },
   summaryTrendStats: ['avg', 'med', 'max', 'p(95)', 'p(99)', 'p(99.9)'],
   thresholds: {
@@ -526,10 +510,4 @@ export function statusScenario() {
     }
   }
   sleep(0.05);
-}
-
-export function warmupIteration() {
-  searchAndMenuScenario();
-  checkoutScenario();
-  statusScenario();
 }
